@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" fill="none">
+  <defs>
+    <linearGradient id="brandGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#EC4899" />
+      <stop offset="100%" stop-color="#831843" />
+    </linearGradient>
+  </defs>
+  <!-- Placeholder butterfly silhouette — replace public/logo.svg or public/logo.png with the real Secret Ads Academy logo -->
+  <g stroke="url(#brandGrad)" stroke-width="6" stroke-linejoin="round" stroke-linecap="round" fill="none">
+    <!-- left wing -->
+    <path d="M200 200 L80 90 L70 180 L150 240 Z" />
+    <path d="M200 200 L70 240 L100 320 L180 280 Z" />
+    <!-- right wing -->
+    <path d="M200 200 L320 90 L330 180 L250 240 Z" />
+    <path d="M200 200 L330 240 L300 320 L220 280 Z" />
+    <!-- body / antennae -->
+    <line x1="200" y1="120" x2="200" y2="320" />
+    <line x1="200" y1="120" x2="180" y2="80" />
+    <line x1="200" y1="120" x2="220" y2="80" />
+  </g>
+</svg>
