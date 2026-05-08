@@ -15,7 +15,7 @@ export const metadata: Metadata = {
   description:
     "Plataforma oficial de certificación de Secret Ads Academy. Realiza tu examen y obtén tu acreditación.",
   icons: {
-    icon: "/favicon.png",
+    icon: [{ url: "/logo.svg", type: "image/svg+xml" }],
   },
 };
 
