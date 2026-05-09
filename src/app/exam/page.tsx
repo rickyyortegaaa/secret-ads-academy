@@ -75,6 +75,14 @@ export default async function ExamPage() {
     };
   }
 
+  // Pass threshold para mostrar en la pantalla de intro
+  const { data: settings } = await supabase
+    .from("settings")
+    .select("pass_threshold")
+    .limit(1)
+    .maybeSingle();
+  const passThreshold = Number(settings?.pass_threshold ?? 70);
+
   return (
     <div className="relative min-h-screen bg-gradient-to-br from-pink-50 via-white to-pink-50 px-4 py-8">
       <div
@@ -104,6 +112,7 @@ export default async function ExamPage() {
           questions={questions}
           initialAnswers={initialAnswers}
           alreadyFinished={attempt.alreadyFinished}
+          passThreshold={passThreshold}
           onLogoutAction={logoutAction}
         />
       </main>

@@ -13,6 +13,8 @@ import { QuestionScreen, type ExamQuestion } from "./question-screen";
 import { ReviewScreen, type ReviewAnswer } from "./review-screen";
 import { ResultsScreen } from "./results-screen";
 import { ExamCompleted } from "./exam-completed";
+import { IntroScreen } from "./intro-screen";
+import { CountdownScreen } from "./countdown-screen";
 
 type ExamRunnerProps = {
   attemptId: string;
@@ -22,12 +24,20 @@ type ExamRunnerProps = {
   initialAnswers: Record<string, ReviewAnswer>;
   /** True if attempt was already finished (returning user). */
   alreadyFinished: boolean;
+  /** Pass threshold % for the Intro screen ("necesitas X% para aprobar"). */
+  passThreshold: number;
   onLogoutAction: () => Promise<void>;
 };
 
 const FEEDBACK_DELAY_MS = 600;
 
-type Phase = "running" | "review" | "submitting" | "submitted";
+type Phase =
+  | "intro"
+  | "countdown"
+  | "running"
+  | "review"
+  | "submitting"
+  | "submitted";
 
 export function ExamRunner({
   attemptId,
@@ -35,6 +45,7 @@ export function ExamRunner({
   questions,
   initialAnswers,
   alreadyFinished,
+  passThreshold,
   onLogoutAction,
 }: ExamRunnerProps) {
   /* ----------------------------------------------------------------- */
@@ -53,9 +64,16 @@ export function ExamRunner({
     return questions.length;
   };
 
+  // Fresh start (sin respuestas previas) → mostrar intro + countdown.
+  // Si ya empezó a contestar (resume), saltarse intro y volver al examen.
+  const isFreshStart = Object.keys(initialAnswers).length === 0;
+
   const [phase, setPhase] = useState<Phase>(() => {
     if (alreadyFinished) return "submitted";
-    return computeStartIndex() >= questions.length ? "review" : "running";
+    const startIdx = computeStartIndex();
+    if (startIdx >= questions.length) return "review";
+    if (isFreshStart) return "intro";
+    return "running";
   });
   const [currentIndex, setCurrentIndex] = useState(() =>
     Math.min(computeStartIndex(), questions.length - 1)
@@ -309,6 +327,21 @@ export function ExamRunner({
   /* ----------------------------------------------------------------- */
   /*  Render                                                            */
   /* ----------------------------------------------------------------- */
+  if (phase === "intro") {
+    return (
+      <IntroScreen
+        studentName={studentName}
+        totalQuestions={questions.length}
+        passThreshold={passThreshold}
+        onStart={() => setPhase("countdown")}
+      />
+    );
+  }
+
+  if (phase === "countdown") {
+    return <CountdownScreen onComplete={() => setPhase("running")} />;
+  }
+
   if (phase === "submitted") {
     return (
       <ResultsScreen
