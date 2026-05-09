@@ -10,6 +10,7 @@ import {
   LogOut,
   Menu,
   X,
+  ShieldCheck,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -28,6 +29,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { href: "/admin/questions", label: "Preguntas", icon: ListChecks },
   { href: "/admin/whitelist", label: "Whitelist", icon: Mail },
+  { href: "/admin/admins", label: "Admins", icon: ShieldCheck },
   { href: "/admin/settings", label: "Settings", icon: Settings },
 ];
 

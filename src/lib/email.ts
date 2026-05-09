@@ -4,6 +4,7 @@ import { Resend } from "resend";
 
 import { InvitationEmail } from "@/emails/invitation-email";
 import { ResultEmail } from "@/emails/result-email";
+import { AdminInvitationEmail } from "@/emails/admin-invitation-email";
 
 /* ------------------------------------------------------------------ */
 /*  Resend client (lazy)                                               */
@@ -69,6 +70,43 @@ export async function sendInvitationEmail(input: {
     return { ok: true, id: data?.id ?? "" };
   } catch (err) {
     console.error("sendInvitationEmail exception", err);
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "Error desconocido",
+    };
+  }
+}
+
+export async function sendAdminInvitationEmail(input: {
+  to: string;
+  recipientName: string;
+  inviterEmail: string;
+  token: string;
+}): Promise<SendEmailResult> {
+  try {
+    const client = getClient();
+    const appUrl = getAppUrl();
+    const setupUrl = `${appUrl}/admin/setup?token=${encodeURIComponent(input.token)}`;
+
+    const { data, error } = await client.emails.send({
+      from: getFrom(),
+      to: input.to,
+      subject:
+        "Invitación al equipo de admins de Secret Ads Academy",
+      react: AdminInvitationEmail({
+        recipientName: input.recipientName,
+        inviterEmail: input.inviterEmail,
+        setupUrl,
+      }),
+    });
+
+    if (error) {
+      console.error("sendAdminInvitationEmail error", error);
+      return { ok: false, error: error.message ?? "Error enviando email" };
+    }
+    return { ok: true, id: data?.id ?? "" };
+  } catch (err) {
+    console.error("sendAdminInvitationEmail exception", err);
     return {
       ok: false,
       error: err instanceof Error ? err.message : "Error desconocido",

@@ -224,6 +224,69 @@ export type Database = {
         };
         Relationships: [];
       };
+      admins: {
+        Row: {
+          id: string;
+          email: string;
+          name: string;
+          password_hash: string;
+          created_at: string;
+          created_by_email: string | null;
+          last_login_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          email: string;
+          name: string;
+          password_hash: string;
+          created_at?: string;
+          created_by_email?: string | null;
+          last_login_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          email?: string;
+          name?: string;
+          password_hash?: string;
+          created_at?: string;
+          created_by_email?: string | null;
+          last_login_at?: string | null;
+        };
+        Relationships: [];
+      };
+      admin_invitations: {
+        Row: {
+          id: string;
+          email: string;
+          name: string;
+          token: string;
+          invited_by_email: string | null;
+          created_at: string;
+          expires_at: string;
+          accepted_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          email: string;
+          name: string;
+          token: string;
+          invited_by_email?: string | null;
+          created_at?: string;
+          expires_at?: string;
+          accepted_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          email?: string;
+          name?: string;
+          token?: string;
+          invited_by_email?: string | null;
+          created_at?: string;
+          expires_at?: string;
+          accepted_at?: string | null;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;
