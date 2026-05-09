@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { createServiceClient } from "@/lib/supabase/server";
 import { getStudentSession } from "@/lib/session";
 import { formatAIFeedback, gradeWrittenAnswersBatch } from "@/lib/ai-grader";
+import { sendResultEmail } from "@/lib/email";
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
@@ -277,6 +278,31 @@ export async function finishAttemptAction(input: {
     if (updateErr) {
       console.error("finishAttempt error", updateErr);
       return { ok: false, error: "No se pudo finalizar el intento" };
+    }
+
+    // Si los resultados se publican automáticamente (global setting), enviar
+    // email al alumno con su nota. Si no, el email lo dispara el admin al
+    // togglear publicación manualmente desde el detalle del intento.
+    if (publishGlobally) {
+      const { data: studentRow } = await supabase
+        .from("students")
+        .select("email, first_name, last_name")
+        .eq("id", studentId)
+        .maybeSingle();
+      if (studentRow?.email) {
+        // No await — fire & forget para no bloquear la respuesta. Si falla,
+        // queda en logs server-side y el admin puede reenviar.
+        void sendResultEmail({
+          to: studentRow.email,
+          recipientName: `${studentRow.first_name} ${studentRow.last_name}`.trim(),
+          score: Number(score.toFixed(2)),
+          passed,
+          passThreshold,
+          certificateUrl: passed
+            ? `${process.env.PUBLIC_APP_URL?.replace(/\/$/, "") || "https://exam.secret-ads.com"}/exam/certificate`
+            : null,
+        }).catch((err) => console.error("sendResultEmail (auto) failed", err));
+      }
     }
 
     revalidatePath("/exam");

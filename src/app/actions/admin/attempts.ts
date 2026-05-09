@@ -8,6 +8,7 @@ import {
   gradeWrittenAnswersBatch,
   type BatchGradeInput,
 } from "@/lib/ai-grader";
+import { sendResultEmail } from "@/lib/email";
 
 import { requireAdminEmail } from "./auth";
 
@@ -201,9 +202,16 @@ export async function getAttemptDetailAction(
 export async function toggleAttemptPublishedAction(
   id: string,
   value: boolean
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<{ ok: true; emailSent?: boolean; emailError?: string } | { ok: false; error: string }> {
   await requireAdminEmail();
   const supabase = createServiceClient();
+
+  // Necesitamos el estado anterior para detectar la transición false→true
+  const { data: before } = await supabase
+    .from("attempts")
+    .select("results_published, score, passed, student_id")
+    .eq("id", id)
+    .maybeSingle();
 
   const { error } = await supabase
     .from("attempts")
@@ -215,9 +223,45 @@ export async function toggleAttemptPublishedAction(
     return { ok: false, error: "No se pudo actualizar" };
   }
 
+  let emailSent: boolean | undefined;
+  let emailError: string | undefined;
+
+  // Solo enviamos email cuando se PUBLICA (transición false → true) y hay nota
+  const isNewlyPublished =
+    value === true && before && before.results_published === false;
+
+  if (isNewlyPublished && before?.score != null) {
+    const { data: student } = await supabase
+      .from("students")
+      .select("email, first_name, last_name")
+      .eq("id", before.student_id)
+      .maybeSingle();
+
+    const { data: settings } = await supabase
+      .from("settings")
+      .select("pass_threshold")
+      .limit(1)
+      .maybeSingle();
+
+    if (student?.email) {
+      const result = await sendResultEmail({
+        to: student.email,
+        recipientName: `${student.first_name} ${student.last_name}`.trim(),
+        score: Number(before.score),
+        passed: !!before.passed,
+        passThreshold: Number(settings?.pass_threshold ?? 70),
+        certificateUrl: before.passed
+          ? `${process.env.PUBLIC_APP_URL?.replace(/\/$/, "") || "https://exam.secret-ads.com"}/exam/certificate`
+          : null,
+      });
+      emailSent = result.ok;
+      if (!result.ok) emailError = result.error;
+    }
+  }
+
   revalidatePath("/admin");
   revalidatePath(`/admin/attempts/${id}`);
-  return { ok: true };
+  return { ok: true, emailSent, emailError };
 }
 
 /* ------------------------------------------------------------------ */

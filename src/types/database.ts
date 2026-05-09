@@ -13,18 +13,21 @@ export type Database = {
         Row: {
           id: string;
           email: string;
+          name: string | null;
           created_at: string;
           notes: string | null;
         };
         Insert: {
           id?: string;
           email: string;
+          name?: string | null;
           created_at?: string;
           notes?: string | null;
         };
         Update: {
           id?: string;
           email?: string;
+          name?: string | null;
           created_at?: string;
           notes?: string | null;
         };

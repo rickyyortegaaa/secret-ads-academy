@@ -130,9 +130,21 @@ export function AttemptDetailView({ detail }: Props) {
         toast.error(result.error);
         return;
       }
-      toast.success(
-        next ? "Resultados publicados al alumno" : "Resultados ocultos al alumno"
-      );
+      if (next) {
+        if (result.emailSent) {
+          toast.success(
+            `Resultados publicados + email enviado a ${detail.student_email}`
+          );
+        } else if (result.emailError) {
+          toast.warning(
+            `Resultados publicados, pero el email NO se envió: ${truncateError(result.emailError)}`
+          );
+        } else {
+          toast.success("Resultados publicados al alumno");
+        }
+      } else {
+        toast.success("Resultados ocultos al alumno");
+      }
     });
   };
 
