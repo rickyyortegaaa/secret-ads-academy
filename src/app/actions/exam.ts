@@ -312,16 +312,32 @@ export async function ensureAttemptForCurrentStudent(): Promise<
       .limit(1)
       .maybeSingle();
 
+    // Single-attempt rule: if `allow_retries` is OFF (default) and they
+    // already finished, return the same attempt — they see results, can't
+    // retry. If ON, finished attempts are kept in history but a new one
+    // is created on next visit.
+    const { data: settings } = await supabase
+      .from("settings")
+      .select("allow_retries")
+      .limit(1)
+      .maybeSingle();
+    const allowRetries = settings?.allow_retries ?? false;
+
     if (existing) {
-      return {
-        ok: true,
-        attemptId: existing.id,
-        questionOrder: existing.question_order,
-        alreadyFinished: !!existing.finished_at,
-      };
+      const isFinished = !!existing.finished_at;
+      if (!isFinished || !allowRetries) {
+        return {
+          ok: true,
+          attemptId: existing.id,
+          questionOrder: existing.question_order,
+          alreadyFinished: isFinished,
+        };
+      }
+      // Retries enabled + previous attempt finished → fall through to create
+      // a new one. Old attempt is preserved in history for the admin.
     }
 
-    // No attempt → create one
+    // Create a fresh attempt
     const { data: questions, error: qErr } = await supabase
       .from("questions")
       .select("id")

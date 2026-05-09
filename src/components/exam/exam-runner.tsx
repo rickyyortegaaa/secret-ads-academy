@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
+import { AlertTriangle, ShieldAlert } from "lucide-react";
 
 import {
   finishAttemptAction,
@@ -83,15 +84,71 @@ export function ExamRunner({
   const currentQuestion = questions[currentIndex];
 
   /* ----------------------------------------------------------------- */
-  /*  Tab-switch detector                                               */
+  /*  Anti-cheat detectors                                              */
+  /*  - visibilitychange (tab switch / minimize / mobile home)          */
+  /*  - window blur     (alt-tab on desktop without hiding)             */
+  /*  - contextmenu     (block right-click — friction, not security)    */
   /* ----------------------------------------------------------------- */
   useEffect(() => {
     if (phase !== "running") return;
-    const handler = () => {
-      if (document.hidden) setTabSwitches((v) => v + 1);
+
+    let lastBumpAt = 0;
+    const bump = (reason: string) => {
+      // Debounce: visibilitychange + blur often fire together for the same
+      // user action — count it once.
+      const now = Date.now();
+      if (now - lastBumpAt < 800) return;
+      lastBumpAt = now;
+
+      setTabSwitches((v) => {
+        const next = v + 1;
+        if (next === 1) {
+          toast.warning(
+            "Has salido del examen — esto queda registrado",
+            { description: "Vuelve a la pestaña del examen para continuar." }
+          );
+        } else if (next < 3) {
+          toast.warning(
+            `Has salido ${next} veces del examen`,
+            { description: "Cada salida queda registrada en tu intento." }
+          );
+        } else if (next === 3) {
+          toast.error(
+            "Aviso: 3ª salida del examen",
+            {
+              description:
+                "Si sigues saliendo, tu intento puede ser invalidado por la academia.",
+              duration: 8000,
+            }
+          );
+        } else {
+          toast.error(`${next}ª salida del examen registrada`, {
+            description: "Tu intento podría ser revisado manualmente.",
+          });
+        }
+        // reason kept in scope so React DevTools / console show why bumped
+        void reason;
+        return next;
+      });
     };
-    document.addEventListener("visibilitychange", handler);
-    return () => document.removeEventListener("visibilitychange", handler);
+
+    const visHandler = () => {
+      if (document.hidden) bump("visibilitychange");
+    };
+    const blurHandler = () => bump("window-blur");
+    const contextMenuHandler = (e: MouseEvent) => {
+      e.preventDefault();
+    };
+
+    document.addEventListener("visibilitychange", visHandler);
+    window.addEventListener("blur", blurHandler);
+    document.addEventListener("contextmenu", contextMenuHandler);
+
+    return () => {
+      document.removeEventListener("visibilitychange", visHandler);
+      window.removeEventListener("blur", blurHandler);
+      document.removeEventListener("contextmenu", contextMenuHandler);
+    };
   }, [phase]);
 
   /* ----------------------------------------------------------------- */
@@ -296,26 +353,64 @@ export function ExamRunner({
 
   const currentAnswer = answers[currentQuestion.id];
   return (
-    <QuestionScreen
-      question={currentQuestion}
-      questionIndex={currentIndex}
-      totalQuestions={questions.length}
-      remainingMs={remainingMs}
-      selectedOptionId={currentAnswer?.selectedOptionId ?? null}
-      textAnswer={draftText}
-      locked={locked}
-      onSelectOption={(optionId) => {
-        if (locked) return;
-        void advanceFromCurrent({ selectedOptionId: optionId });
-      }}
-      onChangeTextAnswer={(value) => {
-        if (locked) return;
-        setDraftText(value);
-      }}
-      onSubmitWritten={() => {
-        if (locked) return;
-        void advanceFromCurrent({ textAnswer: draftText });
-      }}
-    />
+    <>
+      {tabSwitches > 0 ? <TabSwitchBanner count={tabSwitches} /> : null}
+      <QuestionScreen
+        question={currentQuestion}
+        questionIndex={currentIndex}
+        totalQuestions={questions.length}
+        remainingMs={remainingMs}
+        selectedOptionId={currentAnswer?.selectedOptionId ?? null}
+        textAnswer={draftText}
+        locked={locked}
+        onSelectOption={(optionId) => {
+          if (locked) return;
+          void advanceFromCurrent({ selectedOptionId: optionId });
+        }}
+        onChangeTextAnswer={(value) => {
+          if (locked) return;
+          setDraftText(value);
+        }}
+        onSubmitWritten={() => {
+          if (locked) return;
+          void advanceFromCurrent({ textAnswer: draftText });
+        }}
+      />
+    </>
+  );
+}
+
+function TabSwitchBanner({ count }: { count: number }) {
+  const severe = count >= 3;
+  return (
+    <div
+      className={[
+        "mx-auto mb-4 max-w-4xl rounded-xl border-2 px-4 py-3 shadow-sm",
+        severe
+          ? "border-rose-300 bg-rose-50/80"
+          : "border-amber-300 bg-amber-50/80",
+      ].join(" ")}
+    >
+      <div className="flex items-start gap-3">
+        {severe ? (
+          <ShieldAlert className="mt-0.5 size-5 shrink-0 text-rose-600" />
+        ) : (
+          <AlertTriangle className="mt-0.5 size-5 shrink-0 text-amber-600" />
+        )}
+        <div className="flex-1 text-sm">
+          <p className={severe ? "font-bold text-rose-900" : "font-semibold text-amber-900"}>
+            {severe ? "Aviso de integridad del examen" : "Has salido del examen"}
+            <span className="ml-1 tabular-nums">
+              ({count} {count === 1 ? "vez" : "veces"})
+            </span>
+          </p>
+          <p className={`mt-0.5 text-xs ${severe ? "text-rose-800/80" : "text-amber-800/80"}`}>
+            {severe
+              ? "Si continúas saliendo del examen, tu intento podría ser invalidado por la academia. Toda actividad sospechosa queda registrada."
+              : "Cada vez que sales del examen queda registrado. Si necesitas algo, vuelve a esta pestaña antes de seguir."}
+          </p>
+        </div>
+      </div>
+    </div>
   );
 }

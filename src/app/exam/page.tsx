@@ -87,13 +87,13 @@ export default async function ExamPage() {
       />
 
       {/* Header */}
-      <header className="relative z-10 mx-auto mb-6 flex w-full max-w-4xl items-center justify-between">
-        <BrandLogo size={48} showWordmark={false} />
-        <div className="text-right text-xs text-muted-foreground sm:text-sm">
-          <div className="font-semibold text-foreground">
+      <header className="relative z-10 mx-auto mb-6 flex w-full max-w-4xl items-center justify-between gap-3">
+        <BrandLogo size={40} showWordmark={false} className="shrink-0" />
+        <div className="ml-3 min-w-0 flex-1 text-right text-xs text-muted-foreground sm:text-sm">
+          <div className="truncate font-semibold text-foreground">
             {student.first_name} {student.last_name}
           </div>
-          <div>{student.email}</div>
+          <div className="hidden truncate sm:block">{student.email}</div>
         </div>
       </header>
 
