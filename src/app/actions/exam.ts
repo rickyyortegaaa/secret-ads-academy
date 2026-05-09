@@ -4,6 +4,10 @@ import { revalidatePath } from "next/cache";
 
 import { createServiceClient } from "@/lib/supabase/server";
 import { getStudentSession } from "@/lib/session";
+import {
+  gradeWrittenAnswersBatch,
+  type GradingResult,
+} from "@/lib/ai-grader";
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
@@ -22,6 +26,26 @@ async function requireStudent() {
   const studentId = await getStudentSession();
   if (!studentId) throw new Error("UNAUTHORIZED");
   return studentId;
+}
+
+/**
+ * Convierte el resultado estructurado del grader (score + feedback +
+ * strengths + improvements) en un único bloque de markdown para
+ * almacenar en `answers.ai_feedback`. Se renderiza tal cual en la UI.
+ */
+function formatAIFeedback(result: GradingResult): string {
+  const parts: string[] = [];
+  parts.push(result.feedback);
+
+  if (result.strengths.length > 0) {
+    parts.push("\n**Aciertos:**");
+    for (const s of result.strengths) parts.push(`- ${s}`);
+  }
+  if (result.improvements.length > 0) {
+    parts.push("\n**A mejorar:**");
+    for (const i of result.improvements) parts.push(`- ${i}`);
+  }
+  return parts.join("\n");
 }
 
 /* ------------------------------------------------------------------ */
@@ -43,7 +67,8 @@ export type FinishAttemptResult =
 export async function submitAnswerAction(input: {
   attemptId: string;
   questionId: string;
-  selectedOptionId: string | null;
+  selectedOptionId?: string | null;
+  textAnswer?: string | null;
   timeTakenMs: number;
 }): Promise<SubmitAnswerResult> {
   try {
@@ -63,16 +88,17 @@ export async function submitAnswerAction(input: {
     if (attempt.finished_at)
       return { ok: false, error: "El examen ya finalizó" };
 
-    // Upsert by (attempt_id, question_id) — uniqueness is enforced in SQL
+    // Upsert by (attempt_id, question_id) — uniqueness is enforced in SQL.
+    // is_correct / ai_score se calculan al finalizar.
     const { error: upsertErr } = await supabase
       .from("answers")
       .upsert(
         {
           attempt_id: input.attemptId,
           question_id: input.questionId,
-          selected_option_id: input.selectedOptionId,
+          selected_option_id: input.selectedOptionId ?? null,
+          text_answer: input.textAnswer?.trim() || null,
           time_taken_ms: Math.max(0, Math.round(input.timeTakenMs)),
-          // is_correct se calcula al finalizar para mantener un único punto de scoring
         },
         { onConflict: "attempt_id,question_id" }
       );
@@ -127,39 +153,113 @@ export async function finishAttemptAction(input: {
       };
     }
 
-    // Fetch all questions for this attempt (we need correct_option_id)
+    // Fetch all questions for this attempt (need type + correct + reference)
     const questionIds = attempt.question_order;
     const { data: questions, error: qErr } = await supabase
       .from("questions")
-      .select("id, correct_option_id")
+      .select(
+        "id, type, text, correct_option_id, reference_answer, grading_rubric"
+      )
       .in("id", questionIds);
 
-    if (qErr || !questions) return { ok: false, error: "No se pudieron cargar las preguntas" };
+    if (qErr || !questions)
+      return { ok: false, error: "No se pudieron cargar las preguntas" };
 
-    const correctById = new Map(questions.map((q) => [q.id, q.correct_option_id]));
+    const questionById = new Map(questions.map((q) => [q.id, q]));
 
     // Fetch existing answers
     const { data: answers, error: aErr } = await supabase
       .from("answers")
-      .select("id, question_id, selected_option_id")
+      .select("id, question_id, selected_option_id, text_answer")
       .eq("attempt_id", input.attemptId);
 
     if (aErr) return { ok: false, error: "No se pudieron cargar las respuestas" };
 
-    // Mark each answer is_correct + count
-    let correctCount = 0;
-    const updates: { id: string; is_correct: boolean }[] = [];
+    // 1) Score multiple-choice answers (deterministic).
+    // 2) Score written answers via AI in parallel (best-effort).
+    type Update = {
+      id: string;
+      is_correct?: boolean | null;
+      ai_score?: number | null;
+      ai_feedback?: string | null;
+    };
+    const updates: Update[] = [];
+    const writtenToGrade: {
+      answerId: string;
+      input: {
+        question: string;
+        referenceAnswer: string;
+        rubric?: string | null;
+        studentAnswer: string;
+      };
+    }[] = [];
+
+    let correctCount = 0; // multiple_choice
+    let mcTotal = 0;
+    let writtenTotalScore = 0; // sum of ai_score / 100 for written
+    let writtenCount = 0;
+    let writtenAvailable = 0;
 
     for (const ans of answers ?? []) {
-      const correct = correctById.get(ans.question_id);
-      const isCorrect = !!correct && ans.selected_option_id === correct;
-      if (isCorrect) correctCount++;
-      updates.push({ id: ans.id, is_correct: isCorrect });
+      const q = questionById.get(ans.question_id);
+      if (!q) continue;
+
+      if (q.type === "multiple_choice") {
+        mcTotal++;
+        const isCorrect =
+          !!q.correct_option_id &&
+          ans.selected_option_id === q.correct_option_id;
+        if (isCorrect) correctCount++;
+        updates.push({ id: ans.id, is_correct: isCorrect });
+      } else if (q.type === "written") {
+        writtenCount++;
+        if (q.reference_answer) {
+          writtenToGrade.push({
+            answerId: ans.id,
+            input: {
+              question: q.text,
+              referenceAnswer: q.reference_answer,
+              rubric: q.grading_rubric,
+              studentAnswer: ans.text_answer ?? "",
+            },
+          });
+        } else {
+          // Sin respuesta modelo no podemos puntuar → marcar pendiente
+          updates.push({
+            id: ans.id,
+            ai_score: null,
+            ai_feedback: "Pendiente de revisión manual.",
+          });
+        }
+      }
     }
 
-    // Update is_correct in batch (one upsert per row — small N, fine)
+    // Run AI grading in parallel
+    const aiResults = await gradeWrittenAnswersBatch(writtenToGrade);
+    for (const r of aiResults) {
+      if (r.ok) {
+        writtenTotalScore += r.result.score;
+        writtenAvailable++;
+        const formattedFeedback = formatAIFeedback(r.result);
+        updates.push({
+          id: r.answerId,
+          is_correct: r.result.score >= 70,
+          ai_score: r.result.score,
+          ai_feedback: formattedFeedback,
+        });
+      } else {
+        // Fallback: marcar pendiente revisión manual
+        updates.push({
+          id: r.answerId,
+          ai_score: null,
+          ai_feedback: `Pendiente de revisión manual (${r.error}).`,
+        });
+      }
+    }
+
+    // Apply updates (small N, individual updates are fine)
     for (const u of updates) {
-      await supabase.from("answers").update({ is_correct: u.is_correct }).eq("id", u.id);
+      await supabase.from("answers").update(u).eq("id", u.id);
     }
 
     // Settings: pass threshold + global publish flag
@@ -172,8 +272,13 @@ export async function finishAttemptAction(input: {
     const passThreshold = Number(settings?.pass_threshold ?? 70);
     const publishGlobally = settings?.publish_results_globally ?? false;
 
-    const total = questionIds.length;
-    const score = total > 0 ? (correctCount / total) * 100 : 0;
+    // Combined score: each MC question worth 100 (correct/incorrect),
+    // each written question worth its ai_score (0-100). Average across all
+    // gradable questions. Written answers without a graded score are excluded
+    // from the average (so the alumno isn't penalised for an AI failure).
+    const gradableTotal = mcTotal + writtenAvailable;
+    const totalEarned = correctCount * 100 + writtenTotalScore;
+    const score = gradableTotal > 0 ? totalEarned / gradableTotal : 0;
     const passed = score >= passThreshold;
 
     // Mark attempt finished
@@ -267,6 +372,122 @@ export async function ensureAttemptForCurrentStudent(): Promise<
       attemptId: created.id,
       questionOrder,
       alreadyFinished: false,
+    };
+  } catch (err) {
+    console.error(err);
+    return { ok: false, error: "Error del servidor" };
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Per-question results — used by the post-submit ResultsScreen.      */
+/*  Returns one entry per question (in attempt's randomized order)     */
+/*  with the alumno's answer, correctness flag, and AI feedback for    */
+/*  written questions.                                                 */
+/* ------------------------------------------------------------------ */
+
+export type AttemptResultItem = {
+  questionId: string;
+  position: number;
+  type: "multiple_choice" | "written";
+  text: string;
+  imageUrl: string | null;
+  options: { id: string; text: string }[] | null;
+  correctOptionId: string | null;
+  referenceAnswer: string | null;
+  selectedOptionId: string | null;
+  textAnswer: string | null;
+  isCorrect: boolean | null;
+  aiScore: number | null;
+  aiFeedback: string | null;
+};
+
+export type GetAttemptResultsResult =
+  | {
+      ok: true;
+      score: number;
+      passed: boolean | null;
+      published: boolean;
+      passThreshold: number;
+      items: AttemptResultItem[];
+    }
+  | { ok: false; error: string };
+
+export async function getAttemptResultsAction(
+  attemptId: string
+): Promise<GetAttemptResultsResult> {
+  try {
+    const studentId = await requireStudent();
+    const supabase = createServiceClient();
+
+    const { data: attempt } = await supabase
+      .from("attempts")
+      .select(
+        "id, student_id, finished_at, score, passed, results_published, question_order"
+      )
+      .eq("id", attemptId)
+      .maybeSingle();
+
+    if (!attempt) return { ok: false, error: "Intento no encontrado" };
+    if (attempt.student_id !== studentId)
+      return { ok: false, error: "No autorizado" };
+    if (!attempt.finished_at)
+      return { ok: false, error: "El examen aún no ha finalizado" };
+
+    const { data: questions } = await supabase
+      .from("questions")
+      .select(
+        "id, position, type, text, image_url, options, correct_option_id, reference_answer"
+      )
+      .in("id", attempt.question_order);
+
+    const { data: answers } = await supabase
+      .from("answers")
+      .select(
+        "question_id, selected_option_id, text_answer, is_correct, ai_score, ai_feedback"
+      )
+      .eq("attempt_id", attemptId);
+
+    const qById = new Map((questions ?? []).map((q) => [q.id, q]));
+    const aByQId = new Map(
+      (answers ?? []).map((a) => [a.question_id, a])
+    );
+
+    const items: AttemptResultItem[] = [];
+    for (const qid of attempt.question_order) {
+      const q = qById.get(qid);
+      if (!q) continue;
+      const a = aByQId.get(qid);
+      items.push({
+        questionId: q.id,
+        position: q.position,
+        type: q.type,
+        text: q.text,
+        imageUrl: q.image_url,
+        options: q.options,
+        correctOptionId: q.correct_option_id,
+        referenceAnswer: q.reference_answer,
+        selectedOptionId: a?.selected_option_id ?? null,
+        textAnswer: a?.text_answer ?? null,
+        isCorrect: a?.is_correct ?? null,
+        aiScore: a?.ai_score != null ? Number(a.ai_score) : null,
+        aiFeedback: a?.ai_feedback ?? null,
+      });
+    }
+
+    const { data: settings } = await supabase
+      .from("settings")
+      .select("pass_threshold")
+      .limit(1)
+      .maybeSingle();
+
+    return {
+      ok: true,
+      score: Number(attempt.score ?? 0),
+      passed: attempt.passed,
+      published: attempt.results_published ?? false,
+      passThreshold: Number(settings?.pass_threshold ?? 70),
+      items,
     };
   } catch (err) {
     console.error(err);

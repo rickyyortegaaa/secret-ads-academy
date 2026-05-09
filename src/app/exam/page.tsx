@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { BrandLogo } from "@/components/brand-logo";
 import { ExamRunner } from "@/components/exam/exam-runner";
 import { type ExamQuestion } from "@/components/exam/question-screen";
+import { type ReviewAnswer } from "@/components/exam/review-screen";
 import { ensureAttemptForCurrentStudent } from "@/app/actions/exam";
 import { clearStudentSession, getStudentSession } from "@/lib/session";
 import { createServiceClient } from "@/lib/supabase/server";
@@ -33,7 +34,6 @@ export default async function ExamPage() {
     redirect("/");
   }
 
-  // Ensure (or create) the attempt for this student
   const attempt = await ensureAttemptForCurrentStudent();
   if (!attempt.ok) {
     return (
@@ -50,7 +50,7 @@ export default async function ExamPage() {
   // Load questions for this attempt's order
   const { data: rawQuestions } = await supabase
     .from("questions")
-    .select("id, text, image_url, time_seconds, options")
+    .select("id, type, text, image_url, time_seconds, options")
     .in("id", attempt.questionOrder);
 
   const byId = new Map(
@@ -60,32 +60,19 @@ export default async function ExamPage() {
     .map((id) => byId.get(id))
     .filter(Boolean) as ExamQuestion[];
 
-  // Existing answers (resume support)
-  const { count: answeredCount } = await supabase
+  // Existing answers (for resume)
+  const { data: existingAnswers } = await supabase
     .from("answers")
-    .select("id", { count: "exact", head: true })
+    .select("question_id, selected_option_id, text_answer")
     .eq("attempt_id", attempt.attemptId);
 
-  // If already finished, fetch final result for display
-  let finishedResult: {
-    score: number;
-    passed: boolean | null;
-    published: boolean;
-  } | null = null;
-
-  if (attempt.alreadyFinished) {
-    const { data: a } = await supabase
-      .from("attempts")
-      .select("score, passed, results_published")
-      .eq("id", attempt.attemptId)
-      .maybeSingle();
-    if (a) {
-      finishedResult = {
-        score: Number(a.score ?? 0),
-        passed: a.passed,
-        published: a.results_published,
-      };
-    }
+  const initialAnswers: Record<string, ReviewAnswer> = {};
+  for (const a of existingAnswers ?? []) {
+    initialAnswers[a.question_id] = {
+      questionId: a.question_id,
+      selectedOptionId: a.selected_option_id,
+      textAnswer: a.text_answer,
+    };
   }
 
   return (
@@ -115,9 +102,8 @@ export default async function ExamPage() {
           attemptId={attempt.attemptId}
           studentName={student.first_name}
           questions={questions}
-          startIndex={answeredCount ?? 0}
+          initialAnswers={initialAnswers}
           alreadyFinished={attempt.alreadyFinished}
-          finishedResult={finishedResult}
           onLogoutAction={logoutAction}
         />
       </main>
