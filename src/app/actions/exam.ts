@@ -25,6 +25,15 @@ async function requireStudent() {
   return studentId;
 }
 
+/**
+ * Número de preguntas que se sirven por examen. Si el banco tiene más,
+ * se seleccionan EXAM_LENGTH al azar. Si tiene menos, se usan todas.
+ *
+ * Subir o bajar este valor afecta a TODOS los exámenes nuevos. Los
+ * intentos en curso conservan su orden original.
+ */
+const EXAM_LENGTH = 25;
+
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
@@ -346,7 +355,13 @@ export async function ensureAttemptForCurrentStudent(): Promise<
     if (qErr || !questions || questions.length === 0)
       return { ok: false, error: "No hay preguntas disponibles" };
 
-    const questionOrder = shuffle(questions.map((q) => q.id));
+    // Coge EXAM_LENGTH (default 25) al azar del banco. Si el banco tiene
+    // menos preguntas, usa todas. Esto permite ampliar el banco a futuro
+    // sin tocar código: cada alumno ve un subconjunto rotado.
+    const questionOrder = shuffle(questions.map((q) => q.id)).slice(
+      0,
+      EXAM_LENGTH
+    );
 
     const { data: created, error: insertErr } = await supabase
       .from("attempts")
