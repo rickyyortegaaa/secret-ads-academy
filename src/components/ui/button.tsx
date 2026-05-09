@@ -58,6 +58,9 @@ function Button({
       data-slot="button"
       data-variant={variant}
       data-size={size}
+      // Password manager extensions tag submit buttons with data-* attrs
+      // after SSR — silence the benign hydration mismatch.
+      suppressHydrationWarning
       className={cn(buttonVariants({ variant, size, className }))}
       {...props}
     />

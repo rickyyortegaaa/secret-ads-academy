@@ -40,7 +40,11 @@ export function StudentLoginForm() {
   const [state, formAction] = useActionState(studentLoginAction, initialState);
 
   return (
-    <form action={formAction} className="flex flex-col gap-4">
+    <form
+      action={formAction}
+      className="flex flex-col gap-4"
+      suppressHydrationWarning
+    >
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="space-y-2">
           <Label htmlFor="firstName">Nombre</Label>
