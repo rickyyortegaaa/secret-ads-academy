@@ -4,10 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { createServiceClient } from "@/lib/supabase/server";
 import { getStudentSession } from "@/lib/session";
-import {
-  gradeWrittenAnswersBatch,
-  type GradingResult,
-} from "@/lib/ai-grader";
+import { formatAIFeedback, gradeWrittenAnswersBatch } from "@/lib/ai-grader";
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
@@ -26,26 +23,6 @@ async function requireStudent() {
   const studentId = await getStudentSession();
   if (!studentId) throw new Error("UNAUTHORIZED");
   return studentId;
-}
-
-/**
- * Convierte el resultado estructurado del grader (score + feedback +
- * strengths + improvements) en un único bloque de markdown para
- * almacenar en `answers.ai_feedback`. Se renderiza tal cual en la UI.
- */
-function formatAIFeedback(result: GradingResult): string {
-  const parts: string[] = [];
-  parts.push(result.feedback);
-
-  if (result.strengths.length > 0) {
-    parts.push("\n**Aciertos:**");
-    for (const s of result.strengths) parts.push(`- ${s}`);
-  }
-  if (result.improvements.length > 0) {
-    parts.push("\n**A mejorar:**");
-    for (const i of result.improvements) parts.push(`- ${i}`);
-  }
-  return parts.join("\n");
 }
 
 /* ------------------------------------------------------------------ */

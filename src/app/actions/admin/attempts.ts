@@ -3,6 +3,11 @@
 import { revalidatePath } from "next/cache";
 
 import { createServiceClient } from "@/lib/supabase/server";
+import {
+  formatAIFeedback,
+  gradeWrittenAnswersBatch,
+  type BatchGradeInput,
+} from "@/lib/ai-grader";
 
 import { requireAdminEmail } from "./auth";
 
@@ -72,6 +77,8 @@ export async function listAttemptsAction(): Promise<{
 /* ------------------------------------------------------------------ */
 
 export type AttemptDetailAnswer = {
+  /** answers row id (null if no answer was recorded for this question) */
+  answerId: string | null;
   questionId: string;
   position: number;
   type: "multiple_choice" | "written";
@@ -136,7 +143,7 @@ export async function getAttemptDetailAction(
   const { data: answers } = await supabase
     .from("answers")
     .select(
-      "question_id, selected_option_id, text_answer, is_correct, ai_score, ai_feedback"
+      "id, question_id, selected_option_id, text_answer, is_correct, ai_score, ai_feedback"
     )
     .eq("attempt_id", id);
 
@@ -149,6 +156,7 @@ export async function getAttemptDetailAction(
       if (!q) return null;
       const a = aByQId.get(qid);
       return {
+        answerId: a?.id ?? null,
         questionId: q.id,
         position: q.position,
         type: q.type,
@@ -230,4 +238,188 @@ export async function deleteAttemptAction(
   }
   revalidatePath("/admin");
   return { ok: true };
+}
+
+/* ------------------------------------------------------------------ */
+/*  Re-grade pending written answers via AI                            */
+/*  Use cases: API key out of credits, transient errors, manual retry. */
+/*  - If `answerIds` empty → regrades ALL written answers without      */
+/*    ai_score in this attempt.                                        */
+/*  - If `answerIds` provided → forces re-grading of those (even if    */
+/*    they already had a score; useful for "redo this one").           */
+/*  Recalculates the attempt's overall score after grading.            */
+/* ------------------------------------------------------------------ */
+
+export type RegradeResult =
+  | { ok: true; regraded: number; failed: number; firstError?: string }
+  | { ok: false; error: string };
+
+export async function regradeAttemptAction(input: {
+  attemptId: string;
+  answerIds?: string[];
+}): Promise<RegradeResult> {
+  await requireAdminEmail();
+  const supabase = createServiceClient();
+
+  const { data: attempt } = await supabase
+    .from("attempts")
+    .select("id, question_order, finished_at")
+    .eq("id", input.attemptId)
+    .maybeSingle();
+
+  if (!attempt) return { ok: false, error: "Intento no encontrado" };
+  if (!attempt.finished_at)
+    return {
+      ok: false,
+      error: "El examen no ha sido enviado todavía, no hay nada que corregir",
+    };
+
+  // Pick answers
+  let query = supabase
+    .from("answers")
+    .select("id, question_id, text_answer, ai_score")
+    .eq("attempt_id", input.attemptId);
+
+  if (input.answerIds && input.answerIds.length > 0) {
+    query = query.in("id", input.answerIds);
+  }
+
+  const { data: answers } = await query;
+  if (!answers || answers.length === 0) {
+    return { ok: false, error: "No hay respuestas en este intento" };
+  }
+
+  // Fetch question metadata
+  const questionIds = [...new Set(answers.map((a) => a.question_id))];
+  const { data: questions } = await supabase
+    .from("questions")
+    .select("id, type, text, reference_answer, grading_rubric")
+    .in("id", questionIds);
+
+  const qById = new Map((questions ?? []).map((q) => [q.id, q]));
+
+  // Build the batch
+  const toGrade: BatchGradeInput[] = [];
+  for (const a of answers) {
+    const q = qById.get(a.question_id);
+    if (!q || q.type !== "written") continue;
+    if (!q.reference_answer) continue;
+    // If no specific IDs, only regrade pending ones
+    if ((!input.answerIds || input.answerIds.length === 0) && a.ai_score != null)
+      continue;
+
+    toGrade.push({
+      answerId: a.id,
+      input: {
+        question: q.text,
+        referenceAnswer: q.reference_answer,
+        rubric: q.grading_rubric,
+        studentAnswer: a.text_answer ?? "",
+      },
+    });
+  }
+
+  if (toGrade.length === 0) {
+    return { ok: false, error: "No hay respuestas pendientes que corregir" };
+  }
+
+  const aiResults = await gradeWrittenAnswersBatch(toGrade);
+  let regraded = 0;
+  let failed = 0;
+  let firstError: string | undefined;
+
+  for (const r of aiResults) {
+    if (r.ok) {
+      regraded++;
+      const formattedFeedback = formatAIFeedback(r.result);
+      await supabase
+        .from("answers")
+        .update({
+          is_correct: r.result.score >= 70,
+          ai_score: r.result.score,
+          ai_feedback: formattedFeedback,
+        })
+        .eq("id", r.answerId);
+    } else {
+      failed++;
+      if (!firstError) firstError = r.error;
+      await supabase
+        .from("answers")
+        .update({
+          ai_score: null,
+          ai_feedback: `Pendiente de revisión manual (${r.error}).`,
+        })
+        .eq("id", r.answerId);
+    }
+  }
+
+  // Recalculate overall score using the same logic as finishAttemptAction
+  await recalculateAttemptScore(input.attemptId);
+
+  revalidatePath("/admin");
+  revalidatePath(`/admin/attempts/${input.attemptId}`);
+
+  return { ok: true, regraded, failed, firstError };
+}
+
+async function recalculateAttemptScore(attemptId: string) {
+  const supabase = createServiceClient();
+
+  const { data: attempt } = await supabase
+    .from("attempts")
+    .select("id, question_order")
+    .eq("id", attemptId)
+    .maybeSingle();
+  if (!attempt) return;
+
+  const { data: questions } = await supabase
+    .from("questions")
+    .select("id, type, correct_option_id")
+    .in("id", attempt.question_order);
+
+  const { data: answers } = await supabase
+    .from("answers")
+    .select("question_id, selected_option_id, is_correct, ai_score")
+    .eq("attempt_id", attemptId);
+
+  const qById = new Map((questions ?? []).map((q) => [q.id, q]));
+
+  let mcTotal = 0;
+  let correctCount = 0;
+  let writtenAvailable = 0;
+  let writtenTotalScore = 0;
+
+  for (const a of answers ?? []) {
+    const q = qById.get(a.question_id);
+    if (!q) continue;
+    if (q.type === "multiple_choice") {
+      mcTotal++;
+      if (a.is_correct) correctCount++;
+    } else if (q.type === "written") {
+      if (a.ai_score != null) {
+        writtenAvailable++;
+        writtenTotalScore += Number(a.ai_score);
+      }
+    }
+  }
+
+  const { data: settings } = await supabase
+    .from("settings")
+    .select("pass_threshold")
+    .limit(1)
+    .maybeSingle();
+
+  const passThreshold = Number(settings?.pass_threshold ?? 70);
+  const gradableTotal = mcTotal + writtenAvailable;
+  const totalEarned = correctCount * 100 + writtenTotalScore;
+  const score = gradableTotal > 0 ? totalEarned / gradableTotal : 0;
+  const passed = score >= passThreshold;
+
+  await supabase
+    .from("attempts")
+    .update({
+      score: Number(score.toFixed(2)),
+      passed,
+    })
+    .eq("id", attemptId);
 }

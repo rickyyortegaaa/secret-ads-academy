@@ -11,6 +11,8 @@ import {
   ArrowLeft,
   Eye,
   EyeOff,
+  RefreshCw,
+  Sparkles,
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
@@ -31,6 +33,7 @@ import {
 import {
   toggleAttemptPublishedAction,
   deleteAttemptAction,
+  regradeAttemptAction,
   type AttemptDetail,
   type AttemptDetailAnswer,
 } from "@/app/actions/admin/attempts";
@@ -45,6 +48,11 @@ function formatDate(iso: string): string {
   });
 }
 
+function truncateError(msg: string, max = 120): string {
+  if (msg.length <= max) return msg;
+  return msg.slice(0, max - 1) + "…";
+}
+
 type Props = {
   detail: AttemptDetail;
 };
@@ -55,6 +63,60 @@ export function AttemptDetailView({ detail }: Props) {
   const [updatingPublish, startUpdatingPublish] = useTransition();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, startDeleting] = useTransition();
+  const [regradingAll, startRegradingAll] = useTransition();
+  const [regradingId, setRegradingId] = useState<string | null>(null);
+
+  const pendingWritten = detail.answers.filter(
+    (a) => a.type === "written" && a.aiScore == null
+  );
+
+  const handleRegradeAll = () => {
+    startRegradingAll(async () => {
+      const result = await regradeAttemptAction({ attemptId: detail.id });
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      if (result.failed > 0) {
+        toast.warning(
+          `Corregidas ${result.regraded}, ${result.failed} fallaron de nuevo${
+            result.firstError ? `: ${truncateError(result.firstError)}` : ""
+          }`
+        );
+      } else {
+        toast.success(
+          `${result.regraded} ${result.regraded === 1 ? "respuesta corregida" : "respuestas corregidas"}`
+        );
+      }
+      router.refresh();
+    });
+  };
+
+  const handleRegradeOne = (answerId: string) => {
+    setRegradingId(answerId);
+    void (async () => {
+      try {
+        const result = await regradeAttemptAction({
+          attemptId: detail.id,
+          answerIds: [answerId],
+        });
+        if (!result.ok) {
+          toast.error(result.error);
+          return;
+        }
+        if (result.failed > 0) {
+          toast.error(
+            `Volvió a fallar${result.firstError ? `: ${truncateError(result.firstError)}` : ""}`
+          );
+        } else {
+          toast.success("Respuesta corregida");
+          router.refresh();
+        }
+      } finally {
+        setRegradingId(null);
+      }
+    })();
+  };
 
   const handleTogglePublish = (next: boolean) => {
     const previous = published;
@@ -138,7 +200,7 @@ export function AttemptDetailView({ detail }: Props) {
         />
       </div>
 
-      {/* Publish + delete bar */}
+      {/* Publish toggle */}
       <div className="rounded-xl border bg-card p-4 shadow-sm sm:p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="space-y-1">
@@ -167,6 +229,49 @@ export function AttemptDetailView({ detail }: Props) {
         </div>
       </div>
 
+      {/* Pending AI grading banner */}
+      {pendingWritten.length > 0 ? (
+        <div className="rounded-xl border-2 border-amber-300 bg-amber-50/60 p-4 shadow-sm sm:p-6">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="mt-0.5 size-5 shrink-0 text-amber-600" />
+              <div>
+                <h3 className="font-semibold text-amber-900">
+                  {pendingWritten.length}{" "}
+                  {pendingWritten.length === 1
+                    ? "respuesta abierta pendiente"
+                    : "respuestas abiertas pendientes"}{" "}
+                  de corrección IA
+                </h3>
+                <p className="mt-0.5 text-xs text-amber-800/80">
+                  La API de Claude falló al corregir estas respuestas (típicamente:
+                  saldo agotado, rate limit o error de red). El alumno NO está
+                  penalizado — sus respuestas no cuentan en la nota hasta que se
+                  corrijan. Pulsa para reintentar.
+                </p>
+              </div>
+            </div>
+            <Button
+              onClick={handleRegradeAll}
+              disabled={regradingAll}
+              className="brand-gradient shrink-0 text-white"
+            >
+              {regradingAll ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" />
+                  Corrigiendo...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="size-4" />
+                  Reintentar todas
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
       {/* Per-question breakdown */}
       <div>
         <h2 className="mb-4 text-xl font-semibold">
@@ -174,7 +279,19 @@ export function AttemptDetailView({ detail }: Props) {
         </h2>
         <div className="space-y-3">
           {detail.answers.map((ans, i) => (
-            <AnswerCard key={ans.questionId} index={i + 1} answer={ans} />
+            <AnswerCard
+              key={ans.questionId}
+              index={i + 1}
+              answer={ans}
+              regrading={
+                regradingId === ans.answerId || (regradingAll && ans.aiScore == null)
+              }
+              onRegrade={
+                ans.type === "written" && ans.answerId
+                  ? () => handleRegradeOne(ans.answerId!)
+                  : undefined
+              }
+            />
           ))}
         </div>
       </div>
@@ -267,9 +384,13 @@ function StatTile({
 function AnswerCard({
   index,
   answer,
+  regrading,
+  onRegrade,
 }: {
   index: number;
   answer: AttemptDetailAnswer;
+  regrading: boolean;
+  onRegrade?: () => void;
 }) {
   const isWritten = answer.type === "written";
   const correct = answer.isCorrect;
@@ -343,7 +464,11 @@ function AnswerCard({
         ) : null}
 
         {isWritten ? (
-          <WrittenAnswerView answer={answer} />
+          <WrittenAnswerView
+            answer={answer}
+            regrading={regrading}
+            onRegrade={onRegrade}
+          />
         ) : (
           <MultipleChoiceAnswerView answer={answer} />
         )}
@@ -399,7 +524,17 @@ function MultipleChoiceAnswerView({
   );
 }
 
-function WrittenAnswerView({ answer }: { answer: AttemptDetailAnswer }) {
+function WrittenAnswerView({
+  answer,
+  regrading,
+  onRegrade,
+}: {
+  answer: AttemptDetailAnswer;
+  regrading: boolean;
+  onRegrade?: () => void;
+}) {
+  const isPending = answer.aiScore == null;
+
   return (
     <div className="space-y-4">
       <div>
@@ -436,12 +571,66 @@ function WrittenAnswerView({ answer }: { answer: AttemptDetailAnswer }) {
 
       {answer.aiFeedback ? (
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Feedback IA
-          </p>
-          <div className="mt-1 whitespace-pre-wrap rounded-lg border bg-muted/20 p-3 text-sm leading-relaxed">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              {isPending ? "Estado" : "Feedback IA"}
+            </p>
+            {onRegrade ? (
+              <Button
+                size="sm"
+                variant={isPending ? "default" : "ghost"}
+                disabled={regrading}
+                onClick={onRegrade}
+                className={
+                  isPending
+                    ? "brand-gradient h-7 text-xs text-white"
+                    : "h-7 text-xs"
+                }
+              >
+                {regrading ? (
+                  <>
+                    <Loader2 className="size-3 animate-spin" />
+                    Corrigiendo...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="size-3" />
+                    {isPending ? "Reintentar IA" : "Volver a corregir"}
+                  </>
+                )}
+              </Button>
+            ) : null}
+          </div>
+          <div
+            className={`mt-1 whitespace-pre-wrap rounded-lg border p-3 text-sm leading-relaxed ${
+              isPending
+                ? "border-amber-200 bg-amber-50/40 text-amber-900"
+                : "bg-muted/20"
+            }`}
+          >
             {answer.aiFeedback}
           </div>
+        </div>
+      ) : answer.textAnswer && onRegrade ? (
+        <div>
+          <Button
+            size="sm"
+            disabled={regrading}
+            onClick={onRegrade}
+            className="brand-gradient text-white"
+          >
+            {regrading ? (
+              <>
+                <Loader2 className="size-3.5 animate-spin" />
+                Corrigiendo...
+              </>
+            ) : (
+              <>
+                <Sparkles className="size-3.5" />
+                Corregir con IA
+              </>
+            )}
+          </Button>
         </div>
       ) : null}
 
