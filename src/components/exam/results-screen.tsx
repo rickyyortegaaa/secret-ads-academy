@@ -1,7 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CheckCircle2, XCircle, Loader2, AlertTriangle } from "lucide-react";
+import {
+  CheckCircle2,
+  XCircle,
+  Loader2,
+  AlertTriangle,
+  Award,
+  Download,
+} from "lucide-react";
 
 import { BrandLogo } from "@/components/brand-logo";
 import { Button } from "@/components/ui/button";
@@ -160,6 +167,23 @@ function ScoreBanner({
         <p className="text-xs text-muted-foreground">
           Umbral de aprobado: {passThreshold}%
         </p>
+
+        {passed === true ? (
+          <div className="mt-4 flex flex-col items-center gap-2 rounded-2xl border-2 border-green-300 bg-white p-4 shadow-sm">
+            <Award className="size-8 text-green-700" />
+            <p className="text-sm font-semibold text-foreground">
+              Tu certificado oficial ya está listo
+            </p>
+            <a
+              href="/exam/certificate"
+              download
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-green-600 px-6 text-sm font-semibold text-white shadow-md transition hover:bg-green-700"
+            >
+              <Download className="size-4" />
+              Descargar certificado PDF
+            </a>
+          </div>
+        ) : null}
       </div>
     </div>
   );

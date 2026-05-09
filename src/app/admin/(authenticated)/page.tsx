@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   XCircle,
   Eye,
+  Download,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -48,13 +49,23 @@ export default async function AdminDashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
-          Dashboard
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Vista general de los intentos de examen.
-        </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
+            Dashboard
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Vista general de los intentos de examen.
+          </p>
+        </div>
+        {attempts.length > 0 ? (
+          <Button asChild variant="outline" className="self-start">
+            <a href="/admin/export" download>
+              <Download className="size-4" />
+              Exportar CSV
+            </a>
+          </Button>
+        ) : null}
       </div>
 
       {/* Stats */}

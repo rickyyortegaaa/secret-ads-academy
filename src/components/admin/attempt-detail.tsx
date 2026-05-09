@@ -13,6 +13,8 @@ import {
   EyeOff,
   RefreshCw,
   Sparkles,
+  Download,
+  Award,
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
@@ -228,6 +230,36 @@ export function AttemptDetailView({ detail }: Props) {
           />
         </div>
       </div>
+
+      {/* Certificate (passed only) */}
+      {detail.passed === true ? (
+        <div className="rounded-xl border-2 border-green-200 bg-green-50/30 p-4 shadow-sm sm:p-6">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <Award className="mt-0.5 size-6 shrink-0 text-green-700" />
+              <div>
+                <h3 className="font-semibold text-green-900">
+                  Certificado disponible
+                </h3>
+                <p className="mt-0.5 text-xs text-green-800/80">
+                  Este alumno aprobó. Descarga el certificado oficial en PDF
+                  con su nombre, nota y fecha. {published ? "El alumno también puede descargarlo." : "El alumno no podrá descargarlo hasta que actives el toggle 'resultados visibles'."}
+                </p>
+              </div>
+            </div>
+            <Button asChild className="shrink-0 bg-green-600 hover:bg-green-700">
+              <a
+                href={`/admin/attempts/${detail.id}/certificate`}
+                target="_blank"
+                rel="noopener"
+              >
+                <Download className="size-4" />
+                Descargar PDF
+              </a>
+            </Button>
+          </div>
+        </div>
+      ) : null}
 
       {/* Pending AI grading banner */}
       {pendingWritten.length > 0 ? (
