@@ -162,7 +162,8 @@ export async function finishAttemptAction(input: {
     if (aErr) return { ok: false, error: "No se pudieron cargar las respuestas" };
 
     // 1) Score multiple-choice answers (deterministic).
-    // 2) Score written answers via AI in parallel (best-effort).
+    // 2) Score written answers via AI in parallel (best-effort, binario).
+    // Cada pregunta vale 100 si correcta, 0 si incorrecta. Score = % correctas.
     type Update = {
       id: string;
       is_correct?: boolean | null;
@@ -180,25 +181,21 @@ export async function finishAttemptAction(input: {
       };
     }[] = [];
 
-    let correctCount = 0; // multiple_choice
-    let mcTotal = 0;
-    let writtenTotalScore = 0; // sum of ai_score / 100 for written
-    let writtenCount = 0;
-    let writtenAvailable = 0;
+    let correctCount = 0; // total correct (MC + written graded)
+    let gradableTotal = 0; // total gradable questions
 
     for (const ans of answers ?? []) {
       const q = questionById.get(ans.question_id);
       if (!q) continue;
 
       if (q.type === "multiple_choice") {
-        mcTotal++;
+        gradableTotal++;
         const isCorrect =
           !!q.correct_option_id &&
           ans.selected_option_id === q.correct_option_id;
         if (isCorrect) correctCount++;
-        updates.push({ id: ans.id, is_correct: isCorrect });
+        updates.push({ id: ans.id, is_correct: isCorrect, ai_score: null });
       } else if (q.type === "written") {
-        writtenCount++;
         if (q.reference_answer) {
           writtenToGrade.push({
             answerId: ans.id,
@@ -210,9 +207,10 @@ export async function finishAttemptAction(input: {
             },
           });
         } else {
-          // Sin respuesta modelo no podemos puntuar → marcar pendiente
+          // Sin respuesta modelo no podemos evaluar → marcar pendiente
           updates.push({
             id: ans.id,
+            is_correct: null,
             ai_score: null,
             ai_feedback: "Pendiente de revisión manual.",
           });
@@ -224,19 +222,19 @@ export async function finishAttemptAction(input: {
     const aiResults = await gradeWrittenAnswersBatch(writtenToGrade);
     for (const r of aiResults) {
       if (r.ok) {
-        writtenTotalScore += r.result.score;
-        writtenAvailable++;
-        const formattedFeedback = formatAIFeedback(r.result);
+        gradableTotal++;
+        if (r.result.is_correct) correctCount++;
         updates.push({
           id: r.answerId,
-          is_correct: r.result.score >= 70,
-          ai_score: r.result.score,
-          ai_feedback: formattedFeedback,
+          is_correct: r.result.is_correct,
+          ai_score: null, // ya no usamos score numérico — es binario
+          ai_feedback: formatAIFeedback(r.result),
         });
       } else {
-        // Fallback: marcar pendiente revisión manual
+        // Fallback: marcar pendiente revisión manual; no penalizar al alumno.
         updates.push({
           id: r.answerId,
+          is_correct: null,
           ai_score: null,
           ai_feedback: `Pendiente de revisión manual (${r.error}).`,
         });
@@ -258,13 +256,10 @@ export async function finishAttemptAction(input: {
     const passThreshold = Number(settings?.pass_threshold ?? 70);
     const publishGlobally = settings?.publish_results_globally ?? false;
 
-    // Combined score: each MC question worth 100 (correct/incorrect),
-    // each written question worth its ai_score (0-100). Average across all
-    // gradable questions. Written answers without a graded score are excluded
-    // from the average (so the alumno isn't penalised for an AI failure).
-    const gradableTotal = mcTotal + writtenAvailable;
-    const totalEarned = correctCount * 100 + writtenTotalScore;
-    const score = gradableTotal > 0 ? totalEarned / gradableTotal : 0;
+    // Score uniforme: cada pregunta vale 100 si correcta, 0 si incorrecta.
+    // Las preguntas pendientes (AI failure) se excluyen del cálculo para
+    // no penalizar al alumno por un fallo técnico.
+    const score = gradableTotal > 0 ? (correctCount * 100) / gradableTotal : 0;
     const passed = score >= passThreshold;
 
     // Mark attempt finished

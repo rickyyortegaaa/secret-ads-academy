@@ -277,7 +277,7 @@ export async function regradeAttemptAction(input: {
   // Pick answers
   let query = supabase
     .from("answers")
-    .select("id, question_id, text_answer, ai_score")
+    .select("id, question_id, text_answer, is_correct")
     .eq("attempt_id", input.attemptId);
 
   if (input.answerIds && input.answerIds.length > 0) {
@@ -304,8 +304,11 @@ export async function regradeAttemptAction(input: {
     const q = qById.get(a.question_id);
     if (!q || q.type !== "written") continue;
     if (!q.reference_answer) continue;
-    // If no specific IDs, only regrade pending ones
-    if ((!input.answerIds || input.answerIds.length === 0) && a.ai_score != null)
+    // If no specific IDs, only regrade pending ones (is_correct == null)
+    if (
+      (!input.answerIds || input.answerIds.length === 0) &&
+      a.is_correct !== null
+    )
       continue;
 
     toGrade.push({
@@ -331,13 +334,12 @@ export async function regradeAttemptAction(input: {
   for (const r of aiResults) {
     if (r.ok) {
       regraded++;
-      const formattedFeedback = formatAIFeedback(r.result);
       await supabase
         .from("answers")
         .update({
-          is_correct: r.result.score >= 70,
-          ai_score: r.result.score,
-          ai_feedback: formattedFeedback,
+          is_correct: r.result.is_correct,
+          ai_score: null,
+          ai_feedback: formatAIFeedback(r.result),
         })
         .eq("id", r.answerId);
     } else {
@@ -346,6 +348,7 @@ export async function regradeAttemptAction(input: {
       await supabase
         .from("answers")
         .update({
+          is_correct: null,
           ai_score: null,
           ai_feedback: `Pendiente de revisión manual (${r.error}).`,
         })
@@ -384,23 +387,17 @@ async function recalculateAttemptScore(attemptId: string) {
 
   const qById = new Map((questions ?? []).map((q) => [q.id, q]));
 
-  let mcTotal = 0;
+  // Score uniforme: cada pregunta vale 100 si correcta, 0 si incorrecta.
+  // Las pendientes (is_correct == null) se excluyen para no penalizar.
   let correctCount = 0;
-  let writtenAvailable = 0;
-  let writtenTotalScore = 0;
+  let gradableTotal = 0;
 
   for (const a of answers ?? []) {
     const q = qById.get(a.question_id);
     if (!q) continue;
-    if (q.type === "multiple_choice") {
-      mcTotal++;
-      if (a.is_correct) correctCount++;
-    } else if (q.type === "written") {
-      if (a.ai_score != null) {
-        writtenAvailable++;
-        writtenTotalScore += Number(a.ai_score);
-      }
-    }
+    if (a.is_correct === null) continue; // pending → excluir
+    gradableTotal++;
+    if (a.is_correct) correctCount++;
   }
 
   const { data: settings } = await supabase
@@ -410,9 +407,7 @@ async function recalculateAttemptScore(attemptId: string) {
     .maybeSingle();
 
   const passThreshold = Number(settings?.pass_threshold ?? 70);
-  const gradableTotal = mcTotal + writtenAvailable;
-  const totalEarned = correctCount * 100 + writtenTotalScore;
-  const score = gradableTotal > 0 ? totalEarned / gradableTotal : 0;
+  const score = gradableTotal > 0 ? (correctCount * 100) / gradableTotal : 0;
   const passed = score >= passThreshold;
 
   await supabase

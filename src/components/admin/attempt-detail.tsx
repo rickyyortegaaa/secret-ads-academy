@@ -69,7 +69,7 @@ export function AttemptDetailView({ detail }: Props) {
   const [regradingId, setRegradingId] = useState<string | null>(null);
 
   const pendingWritten = detail.answers.filter(
-    (a) => a.type === "written" && a.aiScore == null
+    (a) => a.type === "written" && a.isCorrect === null
   );
 
   const handleRegradeAll = () => {
@@ -565,7 +565,7 @@ function WrittenAnswerView({
   regrading: boolean;
   onRegrade?: () => void;
 }) {
-  const isPending = answer.aiScore == null;
+  const isPending = answer.isCorrect === null;
 
   return (
     <div className="space-y-4">
@@ -581,25 +581,6 @@ function WrittenAnswerView({
           )}
         </div>
       </div>
-
-      {answer.aiScore != null ? (
-        <div className="flex items-baseline gap-3">
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Nota IA
-          </p>
-          <span
-            className={`text-2xl font-bold tabular-nums ${
-              answer.aiScore >= 70
-                ? "text-green-600"
-                : answer.aiScore >= 40
-                  ? "text-amber-600"
-                  : "text-rose-600"
-            }`}
-          >
-            {answer.aiScore.toFixed(0)} / 100
-          </span>
-        </div>
-      ) : null}
 
       {answer.aiFeedback ? (
         <div>

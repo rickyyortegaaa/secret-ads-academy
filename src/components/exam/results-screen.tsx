@@ -327,28 +327,6 @@ function WrittenResultBody({ item }: { item: AttemptResultItem }) {
         </div>
       </div>
 
-      {item.aiScore != null ? (
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Nota IA
-          </p>
-          <div className="mt-1 inline-flex items-baseline gap-2">
-            <span
-              className={`text-3xl font-bold tabular-nums ${
-                item.aiScore >= 70
-                  ? "text-green-600"
-                  : item.aiScore >= 40
-                    ? "text-amber-600"
-                    : "text-rose-600"
-              }`}
-            >
-              {item.aiScore.toFixed(0)}
-            </span>
-            <span className="text-sm text-muted-foreground">/ 100</span>
-          </div>
-        </div>
-      ) : null}
-
       {item.aiFeedback ? (
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
