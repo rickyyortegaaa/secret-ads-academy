@@ -1,12 +1,19 @@
 import "server-only";
 
+import path from "path";
+
 import {
   Document,
+  Image,
   Page,
   Text,
   View,
   StyleSheet,
 } from "@react-pdf/renderer";
+
+// Logo se lee del filesystem en runtime — no hace falta URL externa.
+// process.cwd() = raíz del proyecto Next.js.
+const LOGO_PATH = path.join(process.cwd(), "public", "logo.jpg");
 
 /* ------------------------------------------------------------------ */
 /*  Brand colors                                                       */
@@ -80,25 +87,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 6,
   },
-  brandPrimary: {
-    fontFamily: "Times-Bold",
-    fontSize: 26,
-    letterSpacing: 1,
-    color: TEXT_DARK,
-  },
-  brandSecondary: {
-    fontSize: 9,
-    fontFamily: "Helvetica-Bold",
-    letterSpacing: 8,
-    color: BRAND_PINK_DARK,
-    marginTop: 4,
+  brandLogo: {
+    width: 150,
+    height: 150,
   },
   divider: {
     width: 60,
     height: 2,
     backgroundColor: BRAND_PINK,
-    marginTop: 12,
-    marginBottom: 18,
+    marginTop: 8,
+    marginBottom: 14,
   },
   titleEyebrow: {
     fontSize: 10,
@@ -250,10 +248,9 @@ export function CertificateDocument({
         <View style={styles.bottomAccent} />
 
         <View style={styles.body}>
-          {/* Brand */}
+          {/* Brand: el JPG ya contiene mariposa + wordmark */}
           <View style={styles.brandBlock}>
-            <Text style={styles.brandPrimary}>Secret Ads</Text>
-            <Text style={styles.brandSecondary}>A C A D E M Y</Text>
+            <Image src={LOGO_PATH} style={styles.brandLogo} />
             <View style={styles.divider} />
           </View>
 

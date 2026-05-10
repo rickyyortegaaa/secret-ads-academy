@@ -4,11 +4,19 @@ import {
   Head,
   Heading,
   Html,
+  Img,
   Preview,
   Section,
   Tailwind,
   Text,
 } from "@react-email/components";
+
+function getLogoUrl(): string {
+  const base =
+    process.env.PUBLIC_APP_URL?.replace(/\/$/, "") ||
+    "https://exam.secret-ads.com";
+  return `${base}/logo.jpg`;
+}
 
 /**
  * Branded email layout for Secret Ads Academy.
@@ -31,7 +39,7 @@ export function BrandedEmailLayout({
       <Tailwind>
         <Body className="bg-[#FAF8F6] py-8 font-sans">
           <Container className="mx-auto max-w-[600px] overflow-hidden rounded-2xl border border-[#FBCFE8] bg-white shadow-sm">
-            {/* Top brand band */}
+            {/* Top brand band — pink gradient */}
             <Section
               className="px-8 py-1"
               style={{
@@ -44,8 +52,24 @@ export function BrandedEmailLayout({
               </Text>
             </Section>
 
+            {/* Logo lockup */}
+            <Section className="px-8 pt-8 pb-2 text-center">
+              <Img
+                src={getLogoUrl()}
+                alt="Secret Ads Academy"
+                width="200"
+                height="200"
+                style={{
+                  display: "block",
+                  margin: "0 auto",
+                  maxWidth: "200px",
+                  height: "auto",
+                }}
+              />
+            </Section>
+
             {/* Body */}
-            <Section className="px-8 py-10">{children}</Section>
+            <Section className="px-8 pb-10 pt-2">{children}</Section>
 
             {/* Footer */}
             <Section className="border-t border-[#F4F4F5] bg-[#FAFAFA] px-8 py-6 text-center">
