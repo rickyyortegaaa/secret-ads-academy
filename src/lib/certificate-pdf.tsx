@@ -13,7 +13,7 @@ import {
 
 // Logo se lee del filesystem en runtime — no hace falta URL externa.
 // process.cwd() = raíz del proyecto Next.js.
-const LOGO_PATH = path.join(process.cwd(), "public", "logo.jpg");
+const LOGO_PATH = path.join(process.cwd(), "public", "logo.png");
 
 /* ------------------------------------------------------------------ */
 /*  Brand colors                                                       */

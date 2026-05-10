@@ -35,7 +35,7 @@ export function BrandLogo({
       }}
     >
       <Image
-        src="/logo.jpg"
+        src="/logo.png"
         alt="Secret Ads Academy"
         width={size}
         height={size}

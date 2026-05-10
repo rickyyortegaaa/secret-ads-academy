@@ -15,7 +15,7 @@ function getLogoUrl(): string {
   const base =
     process.env.PUBLIC_APP_URL?.replace(/\/$/, "") ||
     "https://exam.secret-ads.com";
-  return `${base}/logo.jpg`;
+  return `${base}/logo.png`;
 }
 
 /**
