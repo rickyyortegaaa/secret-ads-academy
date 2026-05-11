@@ -79,7 +79,7 @@ export function InvitationEmail({
 }
 
 InvitationEmail.PreviewProps = {
-  recipientName: "Juan Pérez",
+  recipientName: "Nombre Apellido",
   appUrl: "https://exam.secret-ads.com",
 } satisfies InvitationEmailProps;
 

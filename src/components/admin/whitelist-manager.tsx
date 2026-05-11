@@ -137,7 +137,7 @@ export function WhitelistManager({ initialEntries }: Props) {
             <Label htmlFor="wl-name">Nombre</Label>
             <Input
               id="wl-name"
-              placeholder="Juan Pérez"
+              placeholder="Nombre y apellidos"
               value={name}
               onChange={(e) => setName(e.target.value)}
               required
@@ -149,7 +149,7 @@ export function WhitelistManager({ initialEntries }: Props) {
             <Input
               id="wl-email"
               type="email"
-              placeholder="alumno@ejemplo.com"
+              placeholder="email@ejemplo.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
@@ -161,7 +161,7 @@ export function WhitelistManager({ initialEntries }: Props) {
             </Label>
             <Input
               id="wl-notes"
-              placeholder="ej: Promoción Marzo 2026"
+              placeholder="ej: cohorte / referencia interna"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               maxLength={280}

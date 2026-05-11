@@ -81,8 +81,8 @@ export function AdminInvitationEmail({
 }
 
 AdminInvitationEmail.PreviewProps = {
-  recipientName: "Pat Lopez",
-  inviterEmail: "ricky@secretadsacademy.com",
+  recipientName: "Nombre Apellido",
+  inviterEmail: "admin@secret-ads.com",
   setupUrl: "https://exam.secret-ads.com/admin/setup?token=abc123",
 } satisfies AdminInvitationEmailProps;
 

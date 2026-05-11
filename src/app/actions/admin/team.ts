@@ -127,7 +127,12 @@ export async function listAdminsAction(): Promise<{
 /* ------------------------------------------------------------------ */
 
 export type InviteResult =
-  | { ok: true; emailSent: boolean; emailError?: string }
+  | {
+      ok: true;
+      invitation: PendingInvitation;
+      emailSent: boolean;
+      emailError?: string;
+    }
   | { ok: false; error: string };
 
 export async function inviteAdminAction(input: {
@@ -157,7 +162,7 @@ export async function inviteAdminAction(input: {
   const token = generateInvitationToken();
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
-  const { error: upsertErr } = await supabase
+  const { data: row, error: upsertErr } = await supabase
     .from("admin_invitations")
     .upsert(
       {
@@ -169,9 +174,11 @@ export async function inviteAdminAction(input: {
         accepted_at: null,
       },
       { onConflict: "email" }
-    );
+    )
+    .select("id, email, name, invited_by_email, created_at, expires_at")
+    .single();
 
-  if (upsertErr) {
+  if (upsertErr || !row) {
     console.error("inviteAdmin upsert error", upsertErr);
     return { ok: false, error: "No se pudo crear la invitación" };
   }
@@ -186,6 +193,15 @@ export async function inviteAdminAction(input: {
   revalidatePath("/admin/admins");
   return {
     ok: true,
+    invitation: {
+      id: row.id,
+      email: row.email,
+      name: row.name,
+      invited_by_email: row.invited_by_email,
+      created_at: row.created_at,
+      expires_at: row.expires_at,
+      expired: false,
+    },
     emailSent: result.ok,
     emailError: result.ok ? undefined : result.error,
   };

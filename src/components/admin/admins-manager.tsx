@@ -103,19 +103,10 @@ export function AdminsManager({
           `Invitación creada, pero el email NO se envió: ${result.emailError}`
         );
       }
-      // Add to local list optimistically — real state syncs on next refresh
+      // Usamos el ID REAL devuelto por el servidor (no un placeholder)
+      // para que cancel/resend funcionen sobre esa fila.
       setInvitations((prev) => [
-        {
-          id: `temp-${Date.now()}`,
-          email: trimmedEmail,
-          name: trimmedName,
-          invited_by_email: currentEmail,
-          created_at: new Date().toISOString(),
-          expires_at: new Date(
-            Date.now() + 7 * 24 * 60 * 60 * 1000
-          ).toISOString(),
-          expired: false,
-        },
+        result.invitation,
         ...prev.filter((p) => p.email !== trimmedEmail),
       ]);
       setName("");
@@ -180,7 +171,7 @@ export function AdminsManager({
             <Label htmlFor="adm-name">Nombre</Label>
             <Input
               id="adm-name"
-              placeholder="Pat López"
+              placeholder="Nombre y apellidos"
               value={name}
               onChange={(e) => setName(e.target.value)}
               required
@@ -192,7 +183,7 @@ export function AdminsManager({
             <Input
               id="adm-email"
               type="email"
-              placeholder="pat@secretadsacademy.com"
+              placeholder="email@ejemplo.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required

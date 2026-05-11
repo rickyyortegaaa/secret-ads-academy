@@ -123,7 +123,7 @@ export function ResultEmail({
 }
 
 ResultEmail.PreviewProps = {
-  recipientName: "Juan Pérez",
+  recipientName: "Nombre Apellido",
   score: 84,
   passed: true,
   passThreshold: 70,
