@@ -14,9 +14,8 @@ export const metadata: Metadata = {
   title: "Secret Ads Academy — Examen de Certificación",
   description:
     "Plataforma oficial de certificación de Secret Ads Academy. Realiza tu examen y obtén tu acreditación.",
-  icons: {
-    icon: [{ url: "/logo.png", type: "image/png" }],
-  },
+  // Favicon + apple-touch: Next.js los auto-genera desde
+  // app/icon.png (256x256) y app/apple-icon.png (180x180).
 };
 
 export default function RootLayout({
